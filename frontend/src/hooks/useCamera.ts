@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, RefObject } from 'react'
+import { useEffect, useState, useCallback, type RefObject } from 'react'
 
 type Facing = 'user' | 'environment'
 

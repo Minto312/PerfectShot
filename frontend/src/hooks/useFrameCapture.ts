@@ -1,4 +1,4 @@
-import { useRef, useEffect, useCallback, useState, RefObject } from 'react'
+import { useRef, useEffect, useCallback, useState, type RefObject } from 'react'
 import { invoke } from '@tauri-apps/api/core'
 
 export interface FaceDetection {
