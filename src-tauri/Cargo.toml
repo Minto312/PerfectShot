@@ -1,0 +1,19 @@
+[package]
+name = "perfectshot"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "perfectshot_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+ort = { version = "2.0.0-rc.12", features = ["ndarray"] }
+ndarray = "0.17"
+image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
