@@ -1,7 +1,22 @@
-/// 顔のBBox内のRGBA画像から目の開き具合スコアを推定する
+use super::landmark;
+
+/// MediaPipe Face Meshの468ランドマークからEAR(Eye Aspect Ratio)を計算し、
+/// 目の開き具合スコアを返す
 ///
-/// 目が開いている場合: 白目と虹彩のコントラストが大きく、水平方向の輝度分散が大きい
-/// 目が閉じている場合: まぶたで覆われ均一になり、輝度分散が小さい
+/// EAR = (|p2-p6| + |p3-p5|) / (2 * |p1-p4|)
+///   開眼: EAR ≈ 0.25-0.35
+///   閉眼: EAR < 0.15
+
+// MediaPipe 468点メッシュの目の輪郭インデックス (EAR計算用6点)
+// 右目: 外側→上→上→内側→下→下
+const RIGHT_EYE: [usize; 6] = [33, 160, 158, 133, 153, 144];
+// 左目: 外側→上→上→内側→下→下
+const LEFT_EYE: [usize; 6] = [362, 385, 387, 263, 373, 380];
+
+// EARからスコアへの変換閾値
+const EAR_OPEN: f32 = 0.25;
+const EAR_CLOSED: f32 = 0.15;
+
 pub fn estimate_eye_score(
     rgba: &[u8],
     img_width: u32,
@@ -11,90 +26,55 @@ pub fn estimate_eye_score(
     face_w: f32,
     face_h: f32,
 ) -> f32 {
-    // 目の領域を顔BBoxから推定
-    // 顔の上部25%-45%、左右それぞれ15%-45%と55%-85%
-    let left_eye = extract_eye_region(
-        rgba, img_width, img_height,
-        face_x, face_y, face_w, face_h,
-        0.15, 0.25, 0.45, 0.45, // 左目: 顔内の相対座標
-    );
-    let right_eye = extract_eye_region(
-        rgba, img_width, img_height,
-        face_x, face_y, face_w, face_h,
-        0.55, 0.25, 0.85, 0.45, // 右目
-    );
+    let result = landmark::predict(rgba, img_width, img_height, face_x, face_y, face_w, face_h);
 
-    let left_score = compute_openness(&left_eye);
-    let right_score = compute_openness(&right_eye);
+    let (landmarks, _score) = match result {
+        Some(v) => v,
+        None => return 0.5,
+    };
 
-    // 両目の平均
-    (left_score + right_score) / 2.0
-}
-
-/// 目の領域のグレースケールピクセル値を取得
-fn extract_eye_region(
-    rgba: &[u8],
-    img_width: u32,
-    img_height: u32,
-    face_x: f32,
-    face_y: f32,
-    face_w: f32,
-    face_h: f32,
-    rel_x1: f32,
-    rel_y1: f32,
-    rel_x2: f32,
-    rel_y2: f32,
-) -> Vec<f32> {
-    let px_x1 = ((face_x + face_w * rel_x1) * img_width as f32) as u32;
-    let px_y1 = ((face_y + face_h * rel_y1) * img_height as f32) as u32;
-    let px_x2 = ((face_x + face_w * rel_x2) * img_width as f32) as u32;
-    let px_y2 = ((face_y + face_h * rel_y2) * img_height as f32) as u32;
-
-    let px_x1 = px_x1.min(img_width.saturating_sub(1));
-    let px_y1 = px_y1.min(img_height.saturating_sub(1));
-    let px_x2 = px_x2.min(img_width);
-    let px_y2 = px_y2.min(img_height);
-
-    let mut pixels = Vec::new();
-    for y in px_y1..px_y2 {
-        for x in px_x1..px_x2 {
-            let idx = ((y * img_width + x) * 4) as usize;
-            if idx + 2 < rgba.len() {
-                // グレースケール変換
-                let gray = 0.299 * rgba[idx] as f32
-                    + 0.587 * rgba[idx + 1] as f32
-                    + 0.114 * rgba[idx + 2] as f32;
-                pixels.push(gray);
-            }
-        }
-    }
-    pixels
-}
-
-/// 目の領域の「開き具合」をピクセル統計から推定
-fn compute_openness(pixels: &[f32]) -> f32 {
-    if pixels.len() < 4 {
-        return 0.5; // データ不足
+    if landmarks.len() < 468 {
+        return 0.5;
     }
 
-    let n = pixels.len() as f32;
-    let mean = pixels.iter().sum::<f32>() / n;
+    let left_ear = compute_ear(&landmarks, &LEFT_EYE);
+    let right_ear = compute_ear(&landmarks, &RIGHT_EYE);
+    let avg_ear = (left_ear + right_ear) / 2.0;
 
-    // 標準偏差（コントラスト指標）
-    let variance = pixels.iter().map(|p| (p - mean).powi(2)).sum::<f32>() / n;
-    let std_dev = variance.sqrt();
+    ear_to_score(avg_ear)
+}
 
-    // 最小値-最大値のレンジ
-    let min = pixels.iter().cloned().fold(f32::INFINITY, f32::min);
-    let max = pixels.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
-    let range = max - min;
+/// 6点のランドマークからEARを計算
+fn compute_ear(landmarks: &[(f32, f32)], indices: &[usize; 6]) -> f32 {
+    let p1 = landmarks[indices[0]];
+    let p2 = landmarks[indices[1]];
+    let p3 = landmarks[indices[2]];
+    let p4 = landmarks[indices[3]];
+    let p5 = landmarks[indices[4]];
+    let p6 = landmarks[indices[5]];
 
-    // スコア: 標準偏差とレンジを組み合わせ
-    // 目が開いている場合、std_dev > 20, range > 80 程度を期待
-    // 目が閉じている場合、std_dev < 10, range < 40 程度を期待
-    let std_score = (std_dev / 30.0).clamp(0.0, 1.0);
-    let range_score = (range / 120.0).clamp(0.0, 1.0);
+    let vertical1 = dist(p2, p6);
+    let vertical2 = dist(p3, p5);
+    let horizontal = dist(p1, p4);
 
-    // 重み付き平均
-    (std_score * 0.6 + range_score * 0.4).clamp(0.0, 1.0)
+    if horizontal < 1e-6 {
+        return 0.0;
+    }
+
+    (vertical1 + vertical2) / (2.0 * horizontal)
+}
+
+fn dist(a: (f32, f32), b: (f32, f32)) -> f32 {
+    ((a.0 - b.0).powi(2) + (a.1 - b.1).powi(2)).sqrt()
+}
+
+/// EAR値を0.0-1.0のスコアに線形変換
+fn ear_to_score(ear: f32) -> f32 {
+    if ear >= EAR_OPEN {
+        1.0
+    } else if ear <= EAR_CLOSED {
+        0.0
+    } else {
+        (ear - EAR_CLOSED) / (EAR_OPEN - EAR_CLOSED)
+    }
 }

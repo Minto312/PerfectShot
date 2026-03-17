@@ -1,5 +1,6 @@
 pub mod eye_score;
 pub mod face;
+pub mod landmark;
 
 use serde::Serialize;
 
