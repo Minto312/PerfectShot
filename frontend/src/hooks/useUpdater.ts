@@ -10,12 +10,16 @@ export type UpdateStatus =
   | { state: 'installing' }
   | { state: 'error'; message: string }
 
+const isMobile = /android|iphone|ipad/i.test(navigator.userAgent)
+
 export function useUpdater() {
   const [status, setStatus] = useState<UpdateStatus>({ state: 'idle' })
   const [dismissed, setDismissed] = useState(false)
   const [pendingUpdate, setPendingUpdate] = useState<Update | null>(null)
 
   useEffect(() => {
+    if (isMobile) return
+
     let cancelled = false
 
     async function checkForUpdate() {

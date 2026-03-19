@@ -1,0 +1,8 @@
+{
+  "identifier": "mobile",
+  "description": "Capability for mobile platforms",
+  "platforms": ["iOS", "android"],
+  "permissions": [
+    "core:default"
+  ]
+}
