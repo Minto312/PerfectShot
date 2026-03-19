@@ -6,9 +6,19 @@ const TIMER_OPTIONS = [0, 3, 5, 10] as const
 
 type Phase = 'idle' | 'countdown' | 'capturing'
 
-/** 撮影判定時間を算出する（将来的に人数ベースの多項式に置き換え） */
-function getCaptureWindowSeconds(_faceCount: number): number {
-  return 3
+/** 全員が目を開けている瞬間を捉えるのに必要な撮影判定時間を算出する */
+function getCaptureWindowSeconds(n: number, confidence = 0.99, safetyFactor = 2): number {
+  if (n <= 0) return 3
+
+  const BLINK_RATE = 10 / 60         // 瞬き/秒
+  const BLINK_DURATION = 0.25        // 秒
+  const EFFECTIVE_SAMPLE_RATE = 1 / BLINK_DURATION // 4/秒
+
+  const pAllOpen = Math.pow(1 - BLINK_RATE * BLINK_DURATION, n)
+  const k = Math.ceil(Math.log(1 - confidence) / Math.log(1 - pAllOpen))
+  const T = safetyFactor * k / EFFECTIVE_SAMPLE_RATE
+
+  return Math.max(3, Math.min(T, 15)) // 最低3秒、最大15秒
 }
 
 export function CameraView() {
@@ -20,13 +30,14 @@ export function CameraView() {
   const [timerSeconds, setTimerSeconds] = useState<number>(5)
   const [captureRemaining, setCaptureRemaining] = useState<number | null>(null)
 
-  const isActive = isReady && phase === 'capturing'
+  const isActive = isReady && phase !== 'idle'
   const { result, startTracking, stopTracking } = useFrameCapture(videoRef, {
     enabled: isActive,
   })
 
   const startCaptureWindow = useCallback(() => {
-    const captureSec = getCaptureWindowSeconds(0)
+    const faceCount = result?.faces.length ?? 0
+    const captureSec = Math.ceil(getCaptureWindowSeconds(faceCount))
     setPhase('capturing')
     setCaptureRemaining(captureSec)
     startTracking()
@@ -44,7 +55,7 @@ export function CameraView() {
         setCaptureRemaining(remaining)
       }
     }, 1000)
-  }, [startTracking, stopTracking])
+  }, [result, startTracking, stopTracking])
 
   const handleShutter = useCallback(() => {
     if (phase !== 'idle') return
