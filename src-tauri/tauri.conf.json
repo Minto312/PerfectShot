@@ -1,7 +1,7 @@
 {
   "$schema": "https://raw.githubusercontent.com/nicklausw/tauri/main/.schema/config.schema.json",
   "productName": "PerfectShot",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "identifier": "com.perfectshot.app",
   "build": {
     "frontendDist": "../frontend/dist",
