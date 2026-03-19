@@ -4,45 +4,71 @@ import { useFrameCapture } from '../hooks/useFrameCapture'
 
 const TIMER_OPTIONS = [0, 3, 5, 10] as const
 
+type Phase = 'idle' | 'countdown' | 'capturing'
+
+/** 撮影判定時間を算出する（将来的に人数ベースの多項式に置き換え） */
+function getCaptureWindowSeconds(_faceCount: number): number {
+  return 3
+}
+
 export function CameraView() {
   const videoRef = useRef<HTMLVideoElement>(null)
   const { isReady, toggleFacing } = useCamera(videoRef)
+  const [phase, setPhase] = useState<Phase>('idle')
   const [countdown, setCountdown] = useState<number | null>(null)
   const [capturedImage, setCapturedImage] = useState<string | null>(null)
   const [timerSeconds, setTimerSeconds] = useState<number>(5)
+  const [captureRemaining, setCaptureRemaining] = useState<number | null>(null)
 
-  const isActive = isReady && countdown !== null
+  const isActive = isReady && phase === 'capturing'
   const { result, startTracking, stopTracking } = useFrameCapture(videoRef, {
     enabled: isActive,
   })
 
-  const handleShutter = useCallback(() => {
-    if (countdown !== null) return
-    setCapturedImage(null)
+  const startCaptureWindow = useCallback(() => {
+    const captureSec = getCaptureWindowSeconds(0)
+    setPhase('capturing')
+    setCaptureRemaining(captureSec)
     startTracking()
 
-    if (timerSeconds === 0) {
-      // 即座に現在のフレームを取得
-      requestAnimationFrame(() => {
+    let remaining = captureSec
+    const interval = setInterval(() => {
+      remaining -= 1
+      if (remaining <= 0) {
+        clearInterval(interval)
         const bestImage = stopTracking()
         if (bestImage) setCapturedImage(bestImage)
-      })
+        setCaptureRemaining(null)
+        setPhase('idle')
+      } else {
+        setCaptureRemaining(remaining)
+      }
+    }, 1000)
+  }, [startTracking, stopTracking])
+
+  const handleShutter = useCallback(() => {
+    if (phase !== 'idle') return
+    setCapturedImage(null)
+
+    if (timerSeconds === 0) {
+      startCaptureWindow()
       return
     }
 
+    setPhase('countdown')
     setCountdown(timerSeconds)
+    let remaining = timerSeconds
     const interval = setInterval(() => {
-      setCountdown(prev => {
-        if (prev === null || prev <= 1) {
-          clearInterval(interval)
-          const bestImage = stopTracking()
-          if (bestImage) setCapturedImage(bestImage)
-          return null
-        }
-        return prev - 1
-      })
+      remaining -= 1
+      if (remaining <= 0) {
+        clearInterval(interval)
+        setCountdown(null)
+        startCaptureWindow()
+      } else {
+        setCountdown(remaining)
+      }
     }, 1000)
-  }, [countdown, timerSeconds, startTracking, stopTracking])
+  }, [phase, timerSeconds, startCaptureWindow])
 
   const handleSave = useCallback(() => {
     if (!capturedImage) return
@@ -85,15 +111,27 @@ export function CameraView() {
         muted
         style={{ width: '100%', height: '100%', objectFit: 'cover' }}
       />
-      {/* スコア表示（カウントダウン中） */}
-      {countdown !== null && (
+      {/* カウントダウン表示 */}
+      {phase === 'countdown' && countdown !== null && (
+        <div style={{
+          position: 'absolute', top: '50%', left: '50%',
+          transform: 'translate(-50%, -50%)',
+          fontSize: 80, fontWeight: 'bold', opacity: 0.8,
+        }}>
+          {countdown}
+        </div>
+      )}
+      {/* 撮影判定中の表示 */}
+      {phase === 'capturing' && (
         <>
           <div style={{
             position: 'absolute', top: '50%', left: '50%',
             transform: 'translate(-50%, -50%)',
-            fontSize: 80, fontWeight: 'bold', opacity: 0.8,
+            fontSize: 24, fontWeight: 'bold', opacity: 0.9,
+            background: 'rgba(255,0,0,0.6)', color: '#fff',
+            padding: '8px 20px', borderRadius: 8,
           }}>
-            {countdown}
+            {captureRemaining}
           </div>
           <div style={{
             position: 'absolute', top: 8, right: 8,
@@ -105,7 +143,7 @@ export function CameraView() {
         </>
       )}
       {/* タイマー設定 */}
-      {countdown === null && (
+      {phase === 'idle' && (
         <div style={{
           position: 'absolute', top: 8, left: 0, right: 0,
           display: 'flex', justifyContent: 'center', gap: 4,
@@ -136,7 +174,7 @@ export function CameraView() {
         <button onClick={toggleFacing} disabled={!isReady}>Flip</button>
         <button
           onClick={handleShutter}
-          disabled={!isReady || countdown !== null}
+          disabled={!isReady || phase !== 'idle'}
           style={{ width: 64, height: 64, borderRadius: '50%', background: '#fff', border: 'none' }}
         />
       </div>
