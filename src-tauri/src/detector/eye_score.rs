@@ -13,9 +13,9 @@ const RIGHT_EYE: [usize; 6] = [33, 160, 158, 133, 153, 144];
 // 左目: 外側→上→上→内側→下→下
 const LEFT_EYE: [usize; 6] = [362, 385, 387, 263, 373, 380];
 
-// EARからスコアへの変換閾値
-const EAR_OPEN: f32 = 0.25;
-const EAR_CLOSED: f32 = 0.15;
+// EARからスコアへの変換閾値（幅を広げてノイズ耐性向上）
+const EAR_OPEN: f32 = 0.28;
+const EAR_CLOSED: f32 = 0.12;
 
 pub fn estimate_eye_score(
     rgba: &[u8],

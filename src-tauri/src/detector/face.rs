@@ -12,9 +12,17 @@ const MODEL_INPUT_H: u32 = 480;
 const CONFIDENCE_THRESHOLD: f32 = 0.7;
 const NMS_THRESHOLD: f32 = 0.3;
 
+/// BBoxスムージングの係数 (0.0=前フレームのみ, 1.0=現フレームのみ)
+const BBOX_SMOOTH_ALPHA: f32 = 0.4;
+/// EyeスコアEMAの係数
+const SCORE_EMA_ALPHA: f32 = 0.3;
+/// トラッキング対象とみなすIoU閾値
+const TRACK_IOU_THRESHOLD: f32 = 0.3;
+
 const ULTRAFACE_MODEL: &[u8] = include_bytes!("../../models/ultraface_640.onnx");
 
 static SESSION: OnceLock<Mutex<Session>> = OnceLock::new();
+static TRACKER: OnceLock<Mutex<Vec<TrackedFace>>> = OnceLock::new();
 
 fn get_session() -> &'static Mutex<Session> {
     SESSION.get_or_init(|| {
@@ -25,6 +33,16 @@ fn get_session() -> &'static Mutex<Session> {
                 .unwrap(),
         )
     })
+}
+
+fn get_tracker() -> &'static Mutex<Vec<TrackedFace>> {
+    TRACKER.get_or_init(|| Mutex::new(Vec::new()))
+}
+
+#[derive(Clone)]
+struct TrackedFace {
+    bbox: [f32; 4],       // smoothed [x, y, x+w, y+h]
+    eye_score_ema: f32,   // EMA of eye open score
 }
 
 /// RGBAフレームデータから顔を検出する
@@ -61,15 +79,63 @@ pub fn detect(frame_data: &[u8], width: u32, height: u32) -> DetectionResult {
     detections.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap());
     let detections = nms(&detections, NMS_THRESHOLD);
 
+    // トラッカーと照合してスムージング
+    let mut tracker = get_tracker().lock().unwrap();
+    let mut new_tracked: Vec<TrackedFace> = Vec::new();
+    let mut used_prev = vec![false; tracker.len()];
+
     let faces: Vec<FaceDetection> = detections
         .iter()
         .map(|(_conf, bbox)| {
-            let x = bbox[0].clamp(0.0, 1.0);
-            let y = bbox[1].clamp(0.0, 1.0);
-            let w = (bbox[2] - bbox[0]).clamp(0.0, 1.0);
-            let h = (bbox[3] - bbox[1]).clamp(0.0, 1.0);
-            let eye_open_score =
+            let raw_bbox = [
+                bbox[0].clamp(0.0, 1.0),
+                bbox[1].clamp(0.0, 1.0),
+                bbox[2].clamp(0.0, 1.0),
+                bbox[3].clamp(0.0, 1.0),
+            ];
+
+            // 前フレームで最もIoUが高いトラッキング対象を探す
+            let matched = tracker
+                .iter()
+                .enumerate()
+                .filter(|(i, _)| !used_prev[*i])
+                .map(|(i, t)| (i, iou(&raw_bbox, &t.bbox)))
+                .filter(|(_, v)| *v > TRACK_IOU_THRESHOLD)
+                .max_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
+
+            let smoothed_bbox = if let Some((prev_idx, _)) = matched {
+                used_prev[prev_idx] = true;
+                let prev = &tracker[prev_idx];
+                [
+                    lerp(prev.bbox[0], raw_bbox[0], BBOX_SMOOTH_ALPHA),
+                    lerp(prev.bbox[1], raw_bbox[1], BBOX_SMOOTH_ALPHA),
+                    lerp(prev.bbox[2], raw_bbox[2], BBOX_SMOOTH_ALPHA),
+                    lerp(prev.bbox[3], raw_bbox[3], BBOX_SMOOTH_ALPHA),
+                ]
+            } else {
+                raw_bbox
+            };
+
+            let x = smoothed_bbox[0];
+            let y = smoothed_bbox[1];
+            let w = smoothed_bbox[2] - smoothed_bbox[0];
+            let h = smoothed_bbox[3] - smoothed_bbox[1];
+
+            let raw_eye_score =
                 eye_score::estimate_eye_score(frame_data, width, height, x, y, w, h);
+
+            // EMAでスコアをスムージング
+            let eye_open_score = if let Some((prev_idx, _)) = matched {
+                lerp(tracker[prev_idx].eye_score_ema, raw_eye_score, SCORE_EMA_ALPHA)
+            } else {
+                raw_eye_score
+            };
+
+            new_tracked.push(TrackedFace {
+                bbox: smoothed_bbox,
+                eye_score_ema: eye_open_score,
+            });
+
             FaceDetection {
                 x,
                 y,
@@ -79,6 +145,8 @@ pub fn detect(frame_data: &[u8], width: u32, height: u32) -> DetectionResult {
             }
         })
         .collect();
+
+    *tracker = new_tracked;
 
     let overall_score = if faces.is_empty() {
         0.0
@@ -96,6 +164,10 @@ pub fn detect(frame_data: &[u8], width: u32, height: u32) -> DetectionResult {
         faces,
         overall_score,
     }
+}
+
+fn lerp(a: f32, b: f32, t: f32) -> f32 {
+    a + (b - a) * t
 }
 
 fn preprocess(rgba: &[u8], width: u32, height: u32) -> Array4<f32> {
