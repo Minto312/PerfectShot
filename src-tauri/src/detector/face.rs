@@ -15,7 +15,7 @@ const NMS_THRESHOLD: f32 = 0.3;
 /// BBoxスムージングの係数 (0.0=前フレームのみ, 1.0=現フレームのみ)
 const BBOX_SMOOTH_ALPHA: f32 = 0.4;
 /// EyeスコアEMAの係数
-const SCORE_EMA_ALPHA: f32 = 0.3;
+const SCORE_EMA_ALPHA: f32 = 0.5;
 /// トラッキング対象とみなすIoU閾値
 const TRACK_IOU_THRESHOLD: f32 = 0.3;
 
