@@ -8,12 +8,16 @@
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "setup:web": "mkdir -p public/models public/ort && cp ../src-tauri/models/*.onnx public/models/ && cp node_modules/onnxruntime-web/dist/ort-wasm*.wasm node_modules/onnxruntime-web/dist/ort-wasm*.mjs public/ort/",
+    "dev:web": "npm run setup:web && vite --host",
+    "build:web": "npm run setup:web && tsc -b && vite build"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.10.1",
     "@tauri-apps/plugin-process": "^2.3.1",
     "@tauri-apps/plugin-updater": "^2.10.0",
+    "onnxruntime-web": "^1.24.3",
     "react": "^19.2.0",
     "react-dom": "^19.2.0"
   },

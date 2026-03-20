@@ -1,5 +1,7 @@
 import type { UpdateStatus } from '../hooks/useUpdater'
 
+const BRAND_YELLOW = '#F5C400'
+
 interface Props {
   status: UpdateStatus
   onUpdate: () => void
@@ -10,7 +12,7 @@ export function UpdateNotification({ status, onUpdate, onDismiss }: Props) {
   if (status.state === 'idle' || status.state === 'checking') return null
 
   const isError = status.state === 'error'
-  const bgColor = isError ? '#dc2626' : '#2563eb'
+  const bgColor = isError ? '#dc2626' : '#1A1A1A'
 
   return (
     <div
@@ -27,6 +29,7 @@ export function UpdateNotification({ status, onUpdate, onDismiss }: Props) {
         alignItems: 'center',
         gap: 12,
         fontSize: 14,
+        borderBottom: isError ? 'none' : `2px solid ${BRAND_YELLOW}`,
       }}
     >
       <div style={{ flex: 1 }}>
@@ -41,7 +44,7 @@ export function UpdateNotification({ status, onUpdate, onDismiss }: Props) {
                 style={{
                   marginTop: 4,
                   height: 4,
-                  background: 'rgba(255,255,255,0.3)',
+                  background: 'rgba(255,255,255,0.15)',
                   borderRadius: 2,
                 }}
               >
@@ -49,7 +52,7 @@ export function UpdateNotification({ status, onUpdate, onDismiss }: Props) {
                   style={{
                     height: '100%',
                     width: `${Math.round((status.progress / status.total) * 100)}%`,
-                    background: '#fff',
+                    background: BRAND_YELLOW,
                     borderRadius: 2,
                     transition: 'width 0.2s',
                   }}
@@ -66,10 +69,10 @@ export function UpdateNotification({ status, onUpdate, onDismiss }: Props) {
         <button
           onClick={onUpdate}
           style={{
-            background: '#fff',
-            color: bgColor,
+            background: BRAND_YELLOW,
+            color: '#111',
             border: 'none',
-            borderRadius: 4,
+            borderRadius: 6,
             padding: '4px 12px',
             cursor: 'pointer',
             fontWeight: 'bold',
@@ -85,7 +88,7 @@ export function UpdateNotification({ status, onUpdate, onDismiss }: Props) {
           onClick={onDismiss}
           style={{
             background: 'transparent',
-            color: '#fff',
+            color: '#888',
             border: 'none',
             cursor: 'pointer',
             fontSize: 18,

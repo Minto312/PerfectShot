@@ -19,8 +19,9 @@ export function DemoView() {
       {/* オーバーレイ: 検出結果 */}
       <div style={{
         position: 'absolute', top: 8, left: 8,
-        background: 'rgba(0,0,0,0.6)', padding: '8px 12px', borderRadius: 4,
+        background: 'rgba(0,0,0,0.6)', padding: '8px 12px', borderRadius: 8,
         fontSize: 14, lineHeight: 1.6,
+        backdropFilter: 'blur(8px)',
       }}>
         <div>Status: {isReady ? 'Active' : 'Initializing...'}</div>
         <div>FPS: {fps}</div>
@@ -37,21 +38,42 @@ export function DemoView() {
             top: `${face.y * 100}%`,
             width: `${face.width * 100}%`,
             height: `${face.height * 100}%`,
-            border: `2px solid ${face.eye_open_score > 0.5 ? '#0f0' : '#f00'}`,
-            borderRadius: 4,
+            border: `2px solid ${face.eye_open_score > 0.5 ? '#4ade80' : '#f87171'}`,
+            borderRadius: 6,
             pointerEvents: 'none',
           }}
         >
           <span style={{
-            position: 'absolute', top: -20, left: 0,
-            fontSize: 12, background: 'rgba(0,0,0,0.6)', padding: '1px 4px', borderRadius: 2,
+            position: 'absolute', top: -22, left: 0,
+            fontSize: 12, background: 'rgba(0,0,0,0.6)', padding: '2px 6px', borderRadius: 4,
+            backdropFilter: 'blur(4px)',
           }}>
             {(face.eye_open_score * 100).toFixed(0)}%
           </span>
         </div>
       ))}
       <div style={{ position: 'absolute', bottom: 32, left: 0, right: 0, display: 'flex', justifyContent: 'center' }}>
-        <button onClick={toggleFacing} disabled={!isReady}>Flip</button>
+        <button onClick={toggleFacing} disabled={!isReady} style={{
+          borderRadius: '50%',
+          width: 44,
+          height: 44,
+          padding: 0,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          background: 'rgba(0,0,0,0.45)',
+          border: 'none',
+          color: '#fff',
+          fontSize: 18,
+          backdropFilter: 'blur(8px)',
+        }}>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M16 3h5v5"/>
+            <path d="M8 21H3v-5"/>
+            <path d="M21 3l-7 7"/>
+            <path d="M3 21l7-7"/>
+          </svg>
+        </button>
       </div>
     </div>
   )

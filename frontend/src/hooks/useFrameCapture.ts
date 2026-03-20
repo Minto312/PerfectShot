@@ -1,5 +1,16 @@
 import { useRef, useEffect, useCallback, useState, type RefObject } from 'react'
-import { invoke } from '@tauri-apps/api/core'
+
+const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
+
+// Tauri invoke をキャッシュ（毎フレームの dynamic import を避ける）
+let cachedInvoke: typeof import('@tauri-apps/api/core').invoke | null = null
+async function getInvoke() {
+  if (!cachedInvoke) {
+    const { invoke } = await import('@tauri-apps/api/core')
+    cachedInvoke = invoke
+  }
+  return cachedInvoke
+}
 
 export interface FaceDetection {
   x: number
@@ -35,6 +46,10 @@ export function useFrameCapture(
   const bestFrameRef = useRef<{ score: number; dataUrl: string } | null>(null)
   const trackingRef = useRef(false)
 
+  // Web Worker（ブラウザモード用）
+  const workerRef = useRef<Worker | null>(null)
+  const workerReadyRef = useRef(false)
+
   const getCanvas = useCallback(() => {
     if (!canvasRef.current) {
       canvasRef.current = document.createElement('canvas')
@@ -57,6 +72,63 @@ export function useFrameCapture(
     return canvas.toDataURL('image/jpeg', 0.95)
   }, [videoRef])
 
+  /** 検出結果のハンドリング（Tauri/Worker共通） */
+  const handleResultRef = useRef<((d: DetectionResult) => void) | null>(null)
+  handleResultRef.current = (detection: DetectionResult) => {
+    setResult(detection)
+
+    if (trackingRef.current) {
+      const best = bestFrameRef.current
+      if (!best || detection.overall_score > best.score) {
+        const dataUrl = captureFullFrame()
+        if (dataUrl) {
+          bestFrameRef.current = { score: detection.overall_score, dataUrl }
+        }
+      }
+    }
+
+    const counter = fpsCounterRef.current
+    counter.count++
+    const now = performance.now()
+    if (now - counter.lastTime >= 1000) {
+      setFps(counter.count)
+      counter.count = 0
+      counter.lastTime = now
+    }
+
+    busyRef.current = false
+  }
+
+  // Worker初期化（ブラウザモードのみ）
+  useEffect(() => {
+    if (isTauri) return
+
+    const worker = new Worker(
+      new URL('../workers/detector.worker.ts', import.meta.url),
+      { type: 'module' },
+    )
+
+    worker.onmessage = (e: MessageEvent) => {
+      if (e.data.type === 'ready') {
+        workerReadyRef.current = true
+      } else if (e.data.type === 'result') {
+        handleResultRef.current?.(e.data.result)
+      } else if (e.data.type === 'error') {
+        console.error('Worker error:', e.data.error)
+        busyRef.current = false
+      }
+    }
+
+    worker.postMessage({ type: 'init' })
+    workerRef.current = worker
+
+    return () => {
+      worker.terminate()
+      workerRef.current = null
+      workerReadyRef.current = false
+    }
+  }, [])
+
   const captureAndDetect = useCallback(async () => {
     const video = videoRef.current
     if (!video || video.readyState < 2 || busyRef.current) return
@@ -75,40 +147,33 @@ export function useFrameCapture(
     const imageData = ctx.getImageData(0, 0, w, h)
 
     busyRef.current = true
-    try {
-      const detection = await invoke<DetectionResult>('detect_eyes', {
-        frameData: Array.from(imageData.data),
-        width: w,
-        height: h,
-      })
-      setResult(detection)
 
-      // ベストフレーム追跡中なら、スコアが高い場合にフル解像度でキャプチャ
-      if (trackingRef.current) {
-        const best = bestFrameRef.current
-        if (!best || detection.overall_score > best.score) {
-          const dataUrl = captureFullFrame()
-          if (dataUrl) {
-            bestFrameRef.current = { score: detection.overall_score, dataUrl }
-          }
-        }
+    if (isTauri) {
+      try {
+        const invoke = await getInvoke()
+        const detection = await invoke<DetectionResult>('detect_eyes', {
+          frameData: Array.from(imageData.data),
+          width: w,
+          height: h,
+        })
+        handleResultRef.current?.(detection)
+      } catch (err) {
+        console.error('Detection failed:', err)
+        busyRef.current = false
       }
-
-      // FPS計測
-      const counter = fpsCounterRef.current
-      counter.count++
-      const now = performance.now()
-      if (now - counter.lastTime >= 1000) {
-        setFps(counter.count)
-        counter.count = 0
-        counter.lastTime = now
+    } else {
+      const worker = workerRef.current
+      if (!worker || !workerReadyRef.current) {
+        busyRef.current = false
+        return
       }
-    } catch (err) {
-      console.error('Detection failed:', err)
-    } finally {
-      busyRef.current = false
+      const rgba = new Uint8Array(imageData.data)
+      worker.postMessage(
+        { type: 'detect', frameData: rgba.buffer, width: w, height: h },
+        [rgba.buffer],
+      )
     }
-  }, [videoRef, captureWidth, getCanvas, captureFullFrame])
+  }, [videoRef, captureWidth, getCanvas])
 
   useEffect(() => {
     if (!enabled) {

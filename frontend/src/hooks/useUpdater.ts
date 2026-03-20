@@ -1,6 +1,4 @@
 import { useState, useEffect, useCallback } from 'react'
-import { check, Update } from '@tauri-apps/plugin-updater'
-import { relaunch } from '@tauri-apps/plugin-process'
 
 export type UpdateStatus =
   | { state: 'idle' }
@@ -10,20 +8,23 @@ export type UpdateStatus =
   | { state: 'installing' }
   | { state: 'error'; message: string }
 
+const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
 const isMobile = /android|iphone|ipad/i.test(navigator.userAgent)
 
 export function useUpdater() {
   const [status, setStatus] = useState<UpdateStatus>({ state: 'idle' })
   const [dismissed, setDismissed] = useState(false)
-  const [pendingUpdate, setPendingUpdate] = useState<Update | null>(null)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [pendingUpdate, setPendingUpdate] = useState<any>(null)
 
   useEffect(() => {
-    if (isMobile) return
+    if (isMobile || !isTauri) return
 
     let cancelled = false
 
     async function checkForUpdate() {
       try {
+        const { check } = await import('@tauri-apps/plugin-updater')
         setStatus({ state: 'checking' })
         const update = await check()
         if (cancelled) return
@@ -52,7 +53,7 @@ export function useUpdater() {
       let totalBytes = 0
       let downloadedBytes = 0
 
-      await pendingUpdate.downloadAndInstall((event) => {
+      await pendingUpdate.downloadAndInstall((event: { event: string; data: { contentLength?: number; chunkLength: number } }) => {
         if (event.event === 'Started') {
           totalBytes = event.data.contentLength ?? 0
           setStatus({ state: 'downloading', progress: 0, total: totalBytes })
@@ -64,6 +65,7 @@ export function useUpdater() {
         }
       })
 
+      const { relaunch } = await import('@tauri-apps/plugin-process')
       await relaunch()
     } catch (e) {
       setStatus({ state: 'error', message: String(e) })

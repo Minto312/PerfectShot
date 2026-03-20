@@ -5,3 +5,7 @@ target/
 *.jks
 *.jks.b64
 *.keystore
+
+# Web build assets (copied by setup:web)
+frontend/public/models/
+frontend/public/ort/
