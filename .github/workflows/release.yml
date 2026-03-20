@@ -13,7 +13,7 @@ env:
 
 jobs:
   build-linux:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
@@ -60,7 +60,7 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
         with:
-          targets: aarch64-apple-darwin,x86_64-apple-darwin
+          targets: aarch64-apple-darwin
 
       - uses: actions/setup-node@v4
         with:
@@ -75,8 +75,8 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci --prefix frontend
 
-      - name: Build Tauri app (universal binary)
-        run: npx --prefix frontend tauri build --target universal-apple-darwin
+      - name: Build Tauri app (aarch64)
+        run: npx --prefix frontend tauri build --target aarch64-apple-darwin
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
@@ -85,9 +85,9 @@ jobs:
         with:
           name: artifacts-macos
           path: |
-            src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg
-            src-tauri/target/universal-apple-darwin/release/bundle/macos/*.app.tar.gz
-            src-tauri/target/universal-apple-darwin/release/bundle/macos/*.app.tar.gz.sig
+            src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/*.dmg
+            src-tauri/target/aarch64-apple-darwin/release/bundle/macos/*.app.tar.gz
+            src-tauri/target/aarch64-apple-darwin/release/bundle/macos/*.app.tar.gz.sig
 
   build-windows:
     runs-on: windows-latest
@@ -233,8 +233,7 @@ jobs:
               platforms: {
                 "windows-x86_64": { url: $win_url, signature: $win_sig },
                 "linux-x86_64": { url: $linux_url, signature: $linux_sig },
-                "darwin-aarch64": { url: $macos_url, signature: $macos_sig },
-                "darwin-x86_64": { url: $macos_url, signature: $macos_sig }
+                "darwin-aarch64": { url: $macos_url, signature: $macos_sig }
               }
             }' > latest.json
 
